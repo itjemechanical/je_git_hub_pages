@@ -1,0 +1,1150 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=1280" />
+  <title>JEM Residential — Operations Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; background: #0d1117; color: #e6edf3;
+      font-family: 'DM Sans', sans-serif; -webkit-font-smoothing: antialiased; }
+    button { font-family: inherit; }
+    input, select, textarea { font-family: inherit; }
+    /* Scrollbar oscura para combinar con el tema */
+    ::-webkit-scrollbar { width: 10px; height: 10px; }
+    ::-webkit-scrollbar-track { background: #0d1117; }
+    ::-webkit-scrollbar-thumb { background: #30363d; border-radius: 5px; }
+    ::-webkit-scrollbar-thumb:hover { background: #484f58; }
+  </style>
+
+  <!-- React + ReactDOM 18 desde CDN -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <!-- Babel standalone para transformar JSX en el browser -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel" data-presets="react">
+const { useState, useEffect } = React;
+
+const COLORS = {
+  bg: "#0d1117", card: "#161b22", card2: "#1c2330", border: "#30363d",
+  accent: "#f0a500", green: "#3fb950", red: "#f85149", yellow: "#d29922",
+  blue: "#58a6ff", purple: "#bc8cff", text: "#e6edf3", muted: "#8b949e",
+  dimmed: "#484f58",
+};
+
+const TARGETS = {
+  dailyRevenue: 5900,
+  weeklyRevenue: 32500,
+  tuneUpsWeekly: 10,
+  maxOverheadDayPerTech: 1.5,
+  maxOverheadWeekTotal: 8,
+  dispatchRate: 0.85,
+};
+
+const BENCHMARKS = {
+  "Tune Up":       { min: 1.5, max: 2.5, gpBench: "44%+" },
+  "Service Call":  { min: 1.5, max: 3.0, gpBench: "40–50%" },
+  "Change Out Std":{ min: 2.0, max: 2.5, gpBench: "35–40%" },
+  "Change Out HE": { min: 3.5, max: 4.0, gpBench: "27–33%" },
+  "Maintenance":   { min: 1.0, max: 2.0, gpBench: "10–15%" },
+  "New Install":   { min: 7,   max: 16,  gpBench: "27–35%" },
+  "Warranty":      { min: 2.0, max: 3.0, gpBench: "Costo" },
+  "Damage Ctrl":   { min: 0,   max: 2.0, gpBench: "Costo" },
+  "Overhead":      { min: 0,   max: 1.5, gpBench: "N/A" },
+};
+
+const JOB_TYPES = Object.keys(BENCHMARKS);
+
+// ─── DATOS PRECARGADOS · SEMANA 18 (27 ABR – 1 MAY 2026) ──────────────────────
+// Fuentes: wk_18_Report_Invoice.xlsx + wk_18_LaborDrivePayrollReport
+const PRELOADED_DATA = {
+  "2026-04-27": {
+    renan: {
+      jobs: [
+        { type: "Service Call", hrs: "5.03", revenue: "2635.75" },
+        { type: "Service Call", hrs: "1.5",  revenue: "60" },
+      ],
+      overheadHrs: "1.33",
+      driveHrs: "0.72",
+      notes: "Hilton Homes2 Suites — dehumidificador comercial, leak repair + 12.4 lb R410a (inv 6600 PAST DUE $2,635.75); Maloney servicio AC airflow (inv 6601 $60)",
+    },
+    omar: {
+      jobs: [
+        { type: "Maintenance", hrs: "1.9",  revenue: "269" },
+        { type: "Maintenance", hrs: "0.75", revenue: "189" },
+        { type: "Maintenance", hrs: "1.45", revenue: "169" },
+        { type: "Warranty",    hrs: "2.23", revenue: "0" },
+      ],
+      overheadHrs: "1.53",
+      driveHrs: "1.01",
+      notes: "Lopez 2-sys mant + capacitor cross-rev (inv 6595 $269 / 6596 $189); Tuxedo Warehouse mant comercial (inv 6599 $169); JE Mech Multifamily warranty call (sin revenue)",
+    },
+    dispatcher: { callsReceived: "", scheduled: "6", completed: "6", cancelled: "", tuneUpsBooked: "", newLeads: "", notes: "" },
+    raul: {
+      invoiced: "3322.75",
+      quotesSent: "", quotesClosed: "", followUps: "",
+      pipelineNotes: "",
+      notes: "Hilton inv 6600 PAST DUE — seguimiento de cobro prioritario ($2,635.75)",
+    },
+  },
+  "2026-04-28": {
+    renan: {
+      jobs: [
+        { type: "Maintenance", hrs: "3.1",  revenue: "276" },
+        { type: "Maintenance", hrs: "1.72", revenue: "169" },
+      ],
+      overheadHrs: "0",
+      driveHrs: "1.2",
+      notes: "Lopez — reemplazo de breakers no-fuse en disconnects exteriores (inv 6603 $276); Kristi Clark mant 1-sys (inv 6604 $169)",
+    },
+    omar: {
+      jobs: [
+        { type: "Maintenance",    hrs: "1.85", revenue: "269" },
+        { type: "Change Out Std", hrs: "8.62", revenue: "16413.15" },
+      ],
+      overheadHrs: "0",
+      driveHrs: "0.84",
+      notes: "Anderson 2-sys mant (inv 6602 $269); Mattarella DUAL change-out Goodman + Lennox heat pumps (inv 6609 PAST DUE $16,413 — fuga en línea de cobre Goodman, no pasó test de nitrógeno)",
+    },
+    dispatcher: { callsReceived: "", scheduled: "4", completed: "4", cancelled: "", tuneUpsBooked: "", newLeads: "", notes: "" },
+    raul: {
+      invoiced: "17127.15",
+      quotesSent: "", quotesClosed: "", followUps: "",
+      pipelineNotes: "",
+      notes: "Mattarella change-out $16,413 PAST DUE — cobranza prioritaria. Día récord por instalación dual.",
+    },
+  },
+  "2026-04-29": {
+    renan: {
+      jobs: [
+        { type: "Maintenance", hrs: "2.67", revenue: "0" },
+        { type: "Maintenance", hrs: "1.45", revenue: "189" },
+        { type: "Warranty",    hrs: "6.42", revenue: "0" },
+      ],
+      overheadHrs: "0.53",
+      driveHrs: "0.45",
+      notes: "Dishon — mant 2-sys (sin invoice esta semana) + cross-rev capacitor reemplazado (inv 6606 $189); Portilla warranty call (joint con Omar — 6.42h)",
+    },
+    omar: {
+      jobs: [
+        { type: "Tune Up",  hrs: "2.4",  revenue: "117" },
+        { type: "Warranty", hrs: "7.22", revenue: "0" },
+      ],
+      overheadHrs: "1.27",
+      driveHrs: "0.62",
+      notes: "Fagan tune-up (inv 6605 $117 — refrigerante bajo, sospecha fuga); Portilla warranty 7.22h (joint con Renan)",
+    },
+    dispatcher: { callsReceived: "", scheduled: "4", completed: "4", cancelled: "", tuneUpsBooked: "1", newLeads: "", notes: "1 tune-up agendado: Paula Fagan" },
+    raul: {
+      invoiced: "306",
+      quotesSent: "", quotesClosed: "", followUps: "",
+      pipelineNotes: "",
+      notes: "Día bajo en revenue — ambos técnicos invirtieron 13.6h en warranty Portilla (sin facturar). Revisar si calificaba como warranty real o damage ctrl.",
+    },
+  },
+  "2026-04-30": {
+    renan: {
+      jobs: [
+        { type: "Service Call", hrs: "4.15", revenue: "419.5" },
+      ],
+      overheadHrs: "1.22",
+      driveHrs: "0.57",
+      notes: "Fagan SEGUIMIENTO de tune-up del miércoles — encontró fuga en válvula de servicio suction, instaló core nuevo, recargó 1.1 lb R410a (inv 6608 $419.50)",
+    },
+    omar: {
+      jobs: [
+        { type: "Maintenance", hrs: "2.43", revenue: "269" },
+        { type: "Service Call", hrs: "0.9",  revenue: "0" },
+        { type: "Maintenance", hrs: "1.02", revenue: "0" },
+        { type: "New Install", hrs: "0.67", revenue: "0" },
+        { type: "Damage Ctrl", hrs: "0.93", revenue: "0" },
+      ],
+      overheadHrs: "0",
+      driveHrs: "2.74",
+      notes: "Mrsich mant 2-sys (inv 6607 $269); Munroe estimado gratis (LEAD); Van Omar stock; CJ Stephans inicio new install Goodman 2.5T; Beltran courtesy. Drive alto: 2.74h.",
+    },
+    dispatcher: { callsReceived: "", scheduled: "6", completed: "6", cancelled: "", tuneUpsBooked: "", newLeads: "1", notes: "Estimate Jovan Munroe = lead nuevo" },
+    raul: {
+      invoiced: "688.5",
+      quotesSent: "", quotesClosed: "", followUps: "",
+      pipelineNotes: "",
+      notes: "Mrsich $269 + Fagan service call $419.50. Pipeline: estimado a Munroe pendiente; CJ Stephans new install en proceso.",
+    },
+  },
+  "2026-05-01": {
+    renan: {
+      jobs: [
+        { type: "Maintenance", hrs: "0.12", revenue: "0" },
+        { type: "Maintenance", hrs: "1.3",  revenue: "0" },
+        { type: "Maintenance", hrs: "2.03", revenue: "269" },
+        { type: "Maintenance", hrs: "1.87", revenue: "0" },
+        { type: "Maintenance", hrs: "1.93", revenue: "269" },
+      ],
+      overheadHrs: "0",
+      driveHrs: "2.58",
+      notes: "5 maintenance: Van Renan stock; Koruthu 2-sys; Adams 2-sys (inv 6611 $269); Seidband 1-sys; Steele 2-sys (inv 6613 $269). Drive alto 2.58h por múltiples paradas.",
+    },
+    omar: {
+      jobs: [
+        { type: "Maintenance",  hrs: "3.08", revenue: "329" },
+        { type: "Maintenance",  hrs: "2.28", revenue: "0" },
+        { type: "Service Call", hrs: "1.43", revenue: "160" },
+      ],
+      overheadHrs: "0",
+      driveHrs: "1.28",
+      notes: "Gideon 3-sys mant (inv 6610 $329); Kesani 3-sys mant; Peresta drain clogged service call (inv 6612 $160)",
+    },
+    dispatcher: { callsReceived: "", scheduled: "8", completed: "8", cancelled: "", tuneUpsBooked: "", newLeads: "", notes: "Día fuerte de mantenimientos (8 jobs)" },
+    raul: {
+      invoiced: "1027",
+      quotesSent: "", quotesClosed: "", followUps: "",
+      pipelineNotes: "",
+      notes: "Gideon $329; Adams $269; Steele $269; Peresta $160. Pendiente facturar: Koruthu, Seidband, Kesani.",
+    },
+  },
+};
+
+const emptyDay = () => ({
+  renan:  { jobs: [], overheadHrs: "", driveHrs: "", notes: "" },
+  omar:   { jobs: [], overheadHrs: "", driveHrs: "", notes: "" },
+  dispatcher: { callsReceived: "", scheduled: "", completed: "", cancelled: "", tuneUpsBooked: "", newLeads: "", notes: "" },
+  raul:   { invoiced: "", quotesSent: "", quotesClosed: "", followUps: "", pipelineNotes: "", notes: "" },
+});
+
+const emptyJob = () => ({ type: "Tune Up", hrs: "", revenue: "" });
+
+const DAY_NAMES = ["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"];
+const MONTH_NAMES = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+
+function fmtDate(dateStr) {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const dt = new Date(y, m - 1, d);
+  return `${DAY_NAMES[dt.getDay()]} ${d} ${MONTH_NAMES[m - 1]}`;
+}
+
+function fmtMoney(n) {
+  const v = Number(n) || 0;
+  return v >= 1000 ? `$${(v/1000).toFixed(1)}K` : `$${v}`;
+}
+
+function getWeekDates(dateStr) {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const dt = new Date(y, m - 1, d);
+  const day = dt.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  const mon = new Date(dt); mon.setDate(dt.getDate() + diff);
+  return Array.from({ length: 5 }, (_, i) => {
+    const dd = new Date(mon); dd.setDate(mon.getDate() + i);
+    const yy = dd.getFullYear();
+    const mm = String(dd.getMonth() + 1).padStart(2, "0");
+    const di = String(dd.getDate()).padStart(2, "0");
+    return `${yy}-${mm}-${di}`;
+  });
+}
+
+function pct(a, b) { return b > 0 ? Math.round((a / b) * 100) : 0; }
+
+function StatusDot({ level }) {
+  const c = level === "green" ? COLORS.green : level === "yellow" ? COLORS.yellow : COLORS.red;
+  return (
+    <span style={{ display:"inline-block", width:9, height:9, borderRadius:"50%",
+      background: c, boxShadow:`0 0 6px ${c}`, marginRight:6, flexShrink:0 }} />
+  );
+}
+
+function BigMetric({ label, value, sub, status, size = 40 }) {
+  const c = status === "green" ? COLORS.green : status === "yellow" ? COLORS.yellow :
+            status === "red" ? COLORS.red : COLORS.text;
+  return (
+    <div style={{ textAlign:"center" }}>
+      <div style={{ fontFamily:"'Bebas Neue',sans-serif", fontSize:size, color:c, lineHeight:1, letterSpacing:1 }}>{value}</div>
+      <div style={{ fontSize:11, color:COLORS.muted, marginTop:3, textTransform:"uppercase", letterSpacing:1 }}>{label}</div>
+      {sub && <div style={{ fontSize:11, color:COLORS.dimmed, marginTop:1 }}>{sub}</div>}
+    </div>
+  );
+}
+
+function ProgressBar({ value, max, color, height = 8 }) {
+  const p = Math.min(100, pct(value, max));
+  const c = color || (p >= 90 ? COLORS.green : p >= 60 ? COLORS.yellow : COLORS.red);
+  return (
+    <div style={{ background: COLORS.border, borderRadius:4, height, overflow:"hidden", width:"100%" }}>
+      <div style={{ width:`${p}%`, height:"100%", background:c, borderRadius:4,
+        transition:"width 0.4s ease", minWidth: p > 0 ? 4 : 0 }} />
+    </div>
+  );
+}
+
+function Card({ children, style = {} }) {
+  return (
+    <div style={{ background: COLORS.card, border:`1px solid ${COLORS.border}`,
+      borderRadius:10, padding:16, ...style }}>
+      {children}
+    </div>
+  );
+}
+
+function SectionTitle({ icon, title, color = COLORS.accent }) {
+  return (
+    <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:14 }}>
+      <span style={{ fontSize:16 }}>{icon}</span>
+      <span style={{ fontFamily:"'Bebas Neue',sans-serif", fontSize:18, color, letterSpacing:1.5 }}>{title}</span>
+    </div>
+  );
+}
+
+function Alert({ text, level = "yellow" }) {
+  const c = level === "red" ? COLORS.red : level === "green" ? COLORS.green : COLORS.yellow;
+  return (
+    <div style={{ display:"flex", alignItems:"center", gap:6, padding:"6px 10px",
+      background:`${c}18`, border:`1px solid ${c}40`, borderRadius:6, fontSize:11, color:c, marginBottom:6 }}>
+      <span>{level === "red" ? "⚠" : level === "green" ? "✓" : "!"}</span>
+      <span>{text}</span>
+    </div>
+  );
+}
+
+// ─── TECH ENTRY ────────────────────────────────────────────────────────────────
+function TechEntry({ name, data, onChange }) {
+  const jobs = data.jobs || [];
+
+  const addJob = () => onChange("jobs", [...jobs, emptyJob()]);
+  const updateJob = (i, field, val) => {
+    const updated = jobs.map((j, idx) => idx === i ? { ...j, [field]: val } : j);
+    onChange("jobs", updated);
+  };
+  const removeJob = (i) => onChange("jobs", jobs.filter((_, idx) => idx !== i));
+
+  const totalBillable = jobs.filter(j => j.type !== "Overhead")
+    .reduce((s, j) => s + (Number(j.hrs) || 0), 0);
+  const totalRevenue = jobs.reduce((s, j) => s + (Number(j.revenue) || 0), 0);
+
+  return (
+    <Card style={{ marginBottom:12 }}>
+      <SectionTitle icon="🔧" title={name.toUpperCase()} color={COLORS.blue} />
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:14 }}>
+        <label style={styles.label}>
+          Hrs Overhead (no fact.)
+          <input type="number" min="0" step="0.25" value={data.overheadHrs}
+            onChange={e => onChange("overheadHrs", e.target.value)}
+            style={{ ...styles.input, borderColor: Number(data.overheadHrs) > 1.5 ? COLORS.red : COLORS.border }} />
+          {Number(data.overheadHrs) > 1.5 && <span style={{ color:COLORS.red, fontSize:10 }}>⚠ Límite diario: 1.5 hrs</span>}
+        </label>
+        <label style={styles.label}>
+          Hrs Conducción (drive)
+          <input type="number" min="0" step="0.25" value={data.driveHrs}
+            onChange={e => onChange("driveHrs", e.target.value)} style={styles.input} />
+        </label>
+      </div>
+
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
+        <span style={{ fontSize:12, color:COLORS.muted, textTransform:"uppercase", letterSpacing:1 }}>Jobs del día</span>
+        <button onClick={addJob} style={styles.addBtn}>+ Agregar job</button>
+      </div>
+
+      {jobs.map((job, i) => {
+        const bench = BENCHMARKS[job.type];
+        const hrs = Number(job.hrs);
+        const overBench = bench && hrs > 0 && hrs > bench.max;
+        return (
+          <div key={i} style={{ display:"grid", gridTemplateColumns:"2fr 1fr 1fr 32px",
+            gap:6, marginBottom:6, alignItems:"center" }}>
+            <select value={job.type} onChange={e => updateJob(i, "type", e.target.value)} style={styles.select}>
+              {JOB_TYPES.map(t => <option key={t}>{t}</option>)}
+            </select>
+            <div>
+              <input type="number" min="0" step="0.25" placeholder="Hrs" value={job.hrs}
+                onChange={e => updateJob(i, "hrs", e.target.value)}
+                style={{ ...styles.input, borderColor: overBench ? COLORS.yellow : COLORS.border, marginBottom:0 }} />
+              {overBench && <div style={{ fontSize:9, color:COLORS.yellow }}>Bench: {bench.min}–{bench.max}h</div>}
+            </div>
+            <input type="number" min="0" step="0.01" placeholder="$Revenue" value={job.revenue}
+              onChange={e => updateJob(i, "revenue", e.target.value)} style={{ ...styles.input, marginBottom:0 }} />
+            <button onClick={() => removeJob(i)} style={{ ...styles.iconBtn, color:COLORS.red }}>✕</button>
+          </div>
+        );
+      })}
+
+      {jobs.length > 0 && (
+        <div style={{ display:"flex", gap:16, marginTop:10, paddingTop:10,
+          borderTop:`1px solid ${COLORS.border}`, fontSize:12, color:COLORS.muted }}>
+          <span>Hrs facturables: <strong style={{ color:COLORS.green }}>{totalBillable.toFixed(1)}h</strong></span>
+          <span>Revenue: <strong style={{ color:COLORS.accent }}>${totalRevenue.toLocaleString()}</strong></span>
+        </div>
+      )}
+
+      <label style={{ ...styles.label, marginTop:10 }}>
+        Notas
+        <textarea value={data.notes} onChange={e => onChange("notes", e.target.value)}
+          placeholder="Observaciones, problemas, warranty..." rows={2} style={styles.textarea} />
+      </label>
+    </Card>
+  );
+}
+
+// ─── DISPATCHER ENTRY ──────────────────────────────────────────────────────────
+function DispatcherEntry({ data, onChange }) {
+  const dispRate = data.scheduled > 0 ? pct(Number(data.completed), Number(data.scheduled)) : null;
+  return (
+    <Card style={{ marginBottom:12 }}>
+      <SectionTitle icon="📞" title="DISPATCHER" color={COLORS.purple} />
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:10 }}>
+        {[
+          ["Llamadas recibidas", "callsReceived"],
+          ["Jobs programados", "scheduled"],
+          ["Jobs completados", "completed"],
+          ["Cancelaciones / No-show", "cancelled"],
+          ["Tune Ups agendados HOY", "tuneUpsBooked"],
+          ["Leads nuevos captados", "newLeads"],
+        ].map(([label, field]) => (
+          <label key={field} style={styles.label}>
+            {label}
+            <input type="number" min="0" value={data[field]}
+              onChange={e => onChange(field, e.target.value)}
+              style={{ ...styles.input,
+                borderColor: field === "cancelled" && Number(data[field]) > 2 ? COLORS.yellow :
+                             field === "tuneUpsBooked" && Number(data[field]) >= 2 ? COLORS.green : COLORS.border }} />
+          </label>
+        ))}
+      </div>
+      {dispRate !== null && dispRate < 85 && (
+        <Alert text={`Tasa de completado: ${dispRate}% — meta: 85%+`} level="yellow" />
+      )}
+      <label style={{ ...styles.label, marginTop:8 }}>
+        Notas del día
+        <textarea value={data.notes} onChange={e => onChange("notes", e.target.value)}
+          placeholder="Problemas en scheduling, cancelaciones especiales..." rows={2} style={styles.textarea} />
+      </label>
+    </Card>
+  );
+}
+
+// ─── RAÚL ENTRY ───────────────────────────────────────────────────────────────
+function RaulEntry({ data, onChange }) {
+  return (
+    <Card style={{ marginBottom:12 }}>
+      <SectionTitle icon="📊" title="RAÚL — VENTAS & GESTIÓN" color={COLORS.accent} />
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
+        <label style={styles.label}>
+          Revenue facturado hoy ($)
+          <input type="number" min="0" value={data.invoiced}
+            onChange={e => onChange("invoiced", e.target.value)}
+            style={{ ...styles.input, borderColor:
+              Number(data.invoiced) >= TARGETS.dailyRevenue ? COLORS.green :
+              Number(data.invoiced) >= TARGETS.dailyRevenue * 0.6 ? COLORS.yellow : COLORS.border }} />
+          <span style={{ fontSize:10, color:COLORS.muted }}>Meta: $5,900/día (mayo)</span>
+        </label>
+        <label style={styles.label}>
+          Cotizaciones enviadas
+          <input type="number" min="0" value={data.quotesSent}
+            onChange={e => onChange("quotesSent", e.target.value)} style={styles.input} />
+        </label>
+        <label style={styles.label}>
+          Cotizaciones cerradas/aprobadas
+          <input type="number" min="0" value={data.quotesClosed}
+            onChange={e => onChange("quotesClosed", e.target.value)} style={styles.input} />
+        </label>
+        <label style={styles.label}>
+          Follow-ups realizados
+          <input type="number" min="0" value={data.followUps}
+            onChange={e => onChange("followUps", e.target.value)} style={styles.input} />
+        </label>
+      </div>
+      <label style={{ ...styles.label, marginTop:8 }}>
+        Notas de pipeline / ventas
+        <textarea value={data.notes} onChange={e => onChange("notes", e.target.value)}
+          placeholder="Jobs cotizados, clientes calientes, actualizaciones de pipeline..." rows={2}
+          style={styles.textarea} />
+      </label>
+    </Card>
+  );
+}
+
+// ─── DAILY BOARD ──────────────────────────────────────────────────────────────
+function DailyBoard({ dayData, weeklyRevenue, weeklyOverhead, weeklyTuneUps, weekDates, allData }) {
+  const renanJobs = dayData.renan?.jobs || [];
+  const omarJobs = dayData.omar?.jobs || [];
+
+  const techMetrics = (name, tech) => {
+    const jobs = tech?.jobs || [];
+    const billableHrs = jobs.filter(j => j.type !== "Overhead")
+      .reduce((s, j) => s + (Number(j.hrs) || 0), 0);
+    const overheadHrs = Number(tech?.overheadHrs) || 0;
+    const driveHrs = Number(tech?.driveHrs) || 0;
+    const totalHrs = billableHrs + overheadHrs;
+    const revenue = jobs.reduce((s, j) => s + (Number(j.revenue) || 0), 0);
+    const billPct = totalHrs > 0 ? pct(billableHrs, totalHrs) : 0;
+    const overStatus = overheadHrs === 0 ? "green" : overheadHrs <= 1.0 ? "green" : overheadHrs <= 1.5 ? "yellow" : "red";
+    const billStatus = billPct >= 85 ? "green" : billPct >= 65 ? "yellow" : "red";
+    const revenuePerHr = billableHrs > 0 ? Math.round(revenue / billableHrs) : 0;
+
+    // Hour benchmark alerts
+    const alerts = [];
+    jobs.forEach(j => {
+      const b = BENCHMARKS[j.type];
+      const h = Number(j.hrs);
+      if (b && h > 0 && h > b.max) alerts.push({ type: j.type, hrs: h, bench: b.max, level: "yellow" });
+    });
+    if (overheadHrs > 1.5) alerts.push({ type: "Overhead", hrs: overheadHrs, bench: 1.5, level: "red" });
+
+    return { billableHrs, overheadHrs, driveHrs, totalHrs, revenue, billPct, overStatus, billStatus, revenuePerHr, alerts, jobs };
+  };
+
+  const r = techMetrics("Renan", dayData.renan);
+  const o = techMetrics("Omar", dayData.omar);
+
+  const disp = dayData.dispatcher || {};
+  const dispCompleted = Number(disp.completed) || 0;
+  const dispScheduled = Number(disp.scheduled) || 0;
+  const dispRate = dispScheduled > 0 ? pct(dispCompleted, dispScheduled) : 0;
+  const tuneUpsToday = Number(disp.tuneUpsBooked) || 0;
+  const cancelled = Number(disp.cancelled) || 0;
+
+  const raul = dayData.raul || {};
+  const invoiced = Number(raul.invoiced) || 0;
+  const quotesSent = Number(raul.quotesSent) || 0;
+  const quotesClosed = Number(raul.quotesClosed) || 0;
+  const closeRate = quotesSent > 0 ? pct(quotesClosed, quotesSent) : null;
+  const revStatus = invoiced >= TARGETS.dailyRevenue ? "green" : invoiced >= TARGETS.dailyRevenue * 0.6 ? "yellow" : invoiced > 0 ? "red" : null;
+  const wkRevStatus = weeklyRevenue >= TARGETS.weeklyRevenue ? "green" : weeklyRevenue >= TARGETS.weeklyRevenue * 0.6 ? "yellow" : "red";
+
+  return (
+    <div>
+      {/* TOP ROW — 4 KPIs */}
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:10, marginBottom:10 }}>
+        <Card style={{ textAlign:"center", background: COLORS.card2 }}>
+          <div style={{ fontSize:10, color:COLORS.muted, textTransform:"uppercase", letterSpacing:1, marginBottom:6 }}>Revenue Hoy</div>
+          <div style={{ fontFamily:"'Bebas Neue',sans-serif", fontSize:38, lineHeight:1,
+            color: revStatus === "green" ? COLORS.green : revStatus === "yellow" ? COLORS.yellow : revStatus === "red" ? COLORS.red : COLORS.dimmed }}>
+            {invoiced > 0 ? fmtMoney(invoiced) : "—"}
+          </div>
+          <div style={{ fontSize:10, color:COLORS.muted, marginTop:4 }}>meta: {fmtMoney(TARGETS.dailyRevenue)}/día</div>
+          {invoiced > 0 && <ProgressBar value={invoiced} max={TARGETS.dailyRevenue} style={{ marginTop:8 }} />}
+        </Card>
+
+        <Card style={{ textAlign:"center", background: COLORS.card2 }}>
+          <div style={{ fontSize:10, color:COLORS.muted, textTransform:"uppercase", letterSpacing:1, marginBottom:6 }}>Revenue Semanal</div>
+          <div style={{ fontFamily:"'Bebas Neue',sans-serif", fontSize:38, lineHeight:1, color:
+            weeklyRevenue >= TARGETS.weeklyRevenue ? COLORS.green : weeklyRevenue >= TARGETS.weeklyRevenue*0.6 ? COLORS.yellow : COLORS.red }}>
+            {fmtMoney(weeklyRevenue)}
+          </div>
+          <div style={{ fontSize:10, color:COLORS.muted, marginTop:4 }}>meta: {fmtMoney(TARGETS.weeklyRevenue)}/sem</div>
+          <ProgressBar value={weeklyRevenue} max={TARGETS.weeklyRevenue} style={{ marginTop:8 }} />
+        </Card>
+
+        <Card style={{ textAlign:"center", background: COLORS.card2 }}>
+          <div style={{ fontSize:10, color:COLORS.muted, textTransform:"uppercase", letterSpacing:1, marginBottom:6 }}>Overhead Semanal</div>
+          <div style={{ fontFamily:"'Bebas Neue',sans-serif", fontSize:38, lineHeight:1,
+            color: weeklyOverhead <= 4 ? COLORS.green : weeklyOverhead <= TARGETS.maxOverheadWeekTotal ? COLORS.yellow : COLORS.red }}>
+            {weeklyOverhead.toFixed(1)}h
+          </div>
+          <div style={{ fontSize:10, color:COLORS.muted, marginTop:4 }}>límite: {TARGETS.maxOverheadWeekTotal}h/semana</div>
+          <ProgressBar value={weeklyOverhead} max={TARGETS.maxOverheadWeekTotal}
+            color={weeklyOverhead <= 4 ? COLORS.green : weeklyOverhead <= 8 ? COLORS.yellow : COLORS.red} style={{ marginTop:8 }} />
+        </Card>
+
+        <Card style={{ textAlign:"center", background: COLORS.card2 }}>
+          <div style={{ fontSize:10, color:COLORS.muted, textTransform:"uppercase", letterSpacing:1, marginBottom:6 }}>Tune Ups Semana</div>
+          <div style={{ fontFamily:"'Bebas Neue',sans-serif", fontSize:38, lineHeight:1,
+            color: weeklyTuneUps >= TARGETS.tuneUpsWeekly ? COLORS.green : weeklyTuneUps >= TARGETS.tuneUpsWeekly * 0.6 ? COLORS.yellow : COLORS.red }}>
+            {weeklyTuneUps}/{TARGETS.tuneUpsWeekly}
+          </div>
+          <div style={{ fontSize:10, color:COLORS.muted, marginTop:4 }}>meta: {TARGETS.tuneUpsWeekly}/semana (mayo)</div>
+          <ProgressBar value={weeklyTuneUps} max={TARGETS.tuneUpsWeekly}
+            color={weeklyTuneUps >= TARGETS.tuneUpsWeekly ? COLORS.green : COLORS.yellow} style={{ marginTop:8 }} />
+        </Card>
+      </div>
+
+      {/* MIDDLE — TECHS + DISPATCHER */}
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:10, marginBottom:10 }}>
+        {/* RENAN */}
+        <TechBoard name="RENAN LEIVA" metrics={r} color={COLORS.blue} />
+        {/* OMAR */}
+        <TechBoard name="OMAR MARADIAGA" metrics={o} color={COLORS.purple} />
+
+        {/* DISPATCHER */}
+        <Card>
+          <SectionTitle icon="📞" title="DISPATCHER" color={COLORS.accent} />
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:12 }}>
+            <div style={{ textAlign:"center" }}>
+              <div style={{ fontFamily:"'Bebas Neue',sans-serif", fontSize:34, lineHeight:1,
+                color: dispRate >= 85 ? COLORS.green : dispRate >= 60 ? COLORS.yellow : dispScheduled === 0 ? COLORS.dimmed : COLORS.red }}>
+                {dispScheduled > 0 ? `${dispRate}%` : "—"}
+              </div>
+              <div style={{ fontSize:10, color:COLORS.muted, textTransform:"uppercase", letterSpacing:1 }}>Completado</div>
+              <div style={{ fontSize:10, color:COLORS.dimmed }}>{dispCompleted}/{dispScheduled} jobs</div>
+            </div>
+            <div style={{ textAlign:"center" }}>
+              <div style={{ fontFamily:"'Bebas Neue',sans-serif", fontSize:34, lineHeight:1,
+                color: tuneUpsToday >= 2 ? COLORS.green : tuneUpsToday === 1 ? COLORS.yellow : COLORS.dimmed }}>
+                {tuneUpsToday}
+              </div>
+              <div style={{ fontSize:10, color:COLORS.muted, textTransform:"uppercase", letterSpacing:1 }}>Tune Ups Hoy</div>
+            </div>
+          </div>
+
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:6, marginBottom:10 }}>
+            {[["📋","Programados", dispScheduled], ["✅","Completados", dispCompleted],
+              ["📵","Cancelados", cancelled], ["📞","Llamadas", Number(disp.callsReceived)||0],
+              ["🌟","Leads", Number(disp.newLeads)||0], ["🎯","T-Ups", tuneUpsToday]]
+              .map(([icon, label, val]) => (
+              <div key={label} style={{ background: COLORS.bg, borderRadius:8, padding:"8px 6px", textAlign:"center" }}>
+                <div style={{ fontSize:14 }}>{icon}</div>
+                <div style={{ fontFamily:"'Bebas Neue',sans-serif", fontSize:22, color:COLORS.text, lineHeight:1 }}>{val}</div>
+                <div style={{ fontSize:9, color:COLORS.dimmed }}>{label}</div>
+              </div>
+            ))}
+          </div>
+
+          {cancelled > 2 && <Alert text={`${cancelled} cancelaciones — revisar causa`} level="yellow" />}
+          {dispRate > 0 && dispRate < 85 && <Alert text={`Completado ${dispRate}% — meta 85%+`} level="yellow" />}
+          {tuneUpsToday >= 2 && <Alert text={`¡${tuneUpsToday} tune ups hoy!`} level="green" />}
+        </Card>
+      </div>
+
+      {/* RAÚL PANEL */}
+      <Card>
+        <SectionTitle icon="📊" title="RAÚL — VENTAS & GESTIÓN" color={COLORS.accent} />
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(5,1fr)", gap:10 }}>
+          <div style={{ textAlign:"center" }}>
+            <div style={{ fontFamily:"'Bebas Neue',sans-serif", fontSize:32, lineHeight:1,
+              color: revStatus === "green" ? COLORS.green : revStatus === "yellow" ? COLORS.yellow : revStatus === "red" ? COLORS.red : COLORS.dimmed }}>
+              {invoiced > 0 ? fmtMoney(invoiced) : "—"}
+            </div>
+            <div style={{ fontSize:10, color:COLORS.muted, textTransform:"uppercase", letterSpacing:1, marginTop:3 }}>Facturado Hoy</div>
+            <div style={{ fontSize:10, color:COLORS.dimmed }}>meta ${TARGETS.dailyRevenue.toLocaleString()}</div>
+          </div>
+          <div style={{ textAlign:"center" }}>
+            <div style={{ fontFamily:"'Bebas Neue',sans-serif", fontSize:32, lineHeight:1, color:COLORS.text }}>{quotesSent || "—"}</div>
+            <div style={{ fontSize:10, color:COLORS.muted, textTransform:"uppercase", letterSpacing:1, marginTop:3 }}>Cotizaciones Enviadas</div>
+          </div>
+          <div style={{ textAlign:"center" }}>
+            <div style={{ fontFamily:"'Bebas Neue',sans-serif", fontSize:32, lineHeight:1,
+              color: quotesClosed > 0 ? COLORS.green : COLORS.dimmed }}>{quotesClosed || "—"}</div>
+            <div style={{ fontSize:10, color:COLORS.muted, textTransform:"uppercase", letterSpacing:1, marginTop:3 }}>Cotizaciones Cerradas</div>
+          </div>
+          <div style={{ textAlign:"center" }}>
+            <div style={{ fontFamily:"'Bebas Neue',sans-serif", fontSize:32, lineHeight:1,
+              color: closeRate !== null ? (closeRate >= 40 ? COLORS.green : closeRate >= 25 ? COLORS.yellow : COLORS.red) : COLORS.dimmed }}>
+              {closeRate !== null ? `${closeRate}%` : "—"}
+            </div>
+            <div style={{ fontSize:10, color:COLORS.muted, textTransform:"uppercase", letterSpacing:1, marginTop:3 }}>Tasa de Cierre</div>
+          </div>
+          <div style={{ textAlign:"center" }}>
+            <div style={{ fontFamily:"'Bebas Neue',sans-serif", fontSize:32, lineHeight:1,
+              color: Number(raul.followUps) >= 3 ? COLORS.green : COLORS.dimmed }}>
+              {Number(raul.followUps) || "—"}
+            </div>
+            <div style={{ fontSize:10, color:COLORS.muted, textTransform:"uppercase", letterSpacing:1, marginTop:3 }}>Follow-Ups</div>
+          </div>
+        </div>
+        {raul.notes && (
+          <div style={{ marginTop:10, padding:"8px 12px", background:COLORS.bg, borderRadius:6,
+            fontSize:12, color:COLORS.muted, borderLeft:`3px solid ${COLORS.accent}` }}>
+            {raul.notes}
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+}
+
+function TechBoard({ name, metrics: m, color }) {
+  const { billableHrs, overheadHrs, driveHrs, billPct, overStatus, billStatus, revenue, revenuePerHr, alerts, jobs } = m;
+  return (
+    <Card>
+      <SectionTitle icon="🔧" title={name} color={color} />
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginBottom:12 }}>
+        <div style={{ background:COLORS.bg, borderRadius:8, padding:"10px 8px", textAlign:"center" }}>
+          <div style={{ fontFamily:"'Bebas Neue',sans-serif", fontSize:30, lineHeight:1,
+            color: billStatus === "green" ? COLORS.green : billStatus === "yellow" ? COLORS.yellow : COLORS.red }}>
+            {billPct > 0 ? `${billPct}%` : "—"}
+          </div>
+          <div style={{ fontSize:9, color:COLORS.muted, textTransform:"uppercase", letterSpacing:1, marginTop:3 }}>% Fact.</div>
+          <div style={{ fontSize:10, color:COLORS.dimmed }}>{billableHrs.toFixed(1)}h fact.</div>
+        </div>
+        <div style={{ background:COLORS.bg, borderRadius:8, padding:"10px 8px", textAlign:"center" }}>
+          <div style={{ fontFamily:"'Bebas Neue',sans-serif", fontSize:30, lineHeight:1,
+            color: overStatus === "green" ? COLORS.green : overStatus === "yellow" ? COLORS.yellow : COLORS.red }}>
+            {overheadHrs > 0 ? `${overheadHrs}h` : "0h"}
+          </div>
+          <div style={{ fontSize:9, color:COLORS.muted, textTransform:"uppercase", letterSpacing:1, marginTop:3 }}>Overhead</div>
+          <div style={{ fontSize:10, color:COLORS.dimmed }}>límite 1.5h</div>
+        </div>
+      </div>
+
+      <div style={{ display:"flex", justifyContent:"space-between", marginBottom:8, fontSize:12 }}>
+        <span style={{ color:COLORS.muted }}>Revenue: <strong style={{ color:COLORS.accent }}>${revenue.toLocaleString()}</strong></span>
+        <span style={{ color:COLORS.muted }}>Drive: <strong style={{ color:COLORS.text }}>{driveHrs}h</strong></span>
+      </div>
+
+      {revenuePerHr > 0 && (
+        <div style={{ fontSize:11, color:COLORS.muted, marginBottom:10 }}>
+          ${revenuePerHr}/hr fact. {revenuePerHr >= 200 ? "✓" : revenuePerHr >= 120 ? "" : "⚠"}
+        </div>
+      )}
+
+      {/* Jobs list */}
+      <div style={{ fontSize:11 }}>
+        {jobs.map((j, i) => {
+          const b = BENCHMARKS[j.type];
+          const hrs = Number(j.hrs);
+          const over = b && hrs > b.max;
+          return (
+            <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"center",
+              padding:"4px 0", borderBottom:`1px solid ${COLORS.border}` }}>
+              <div style={{ display:"flex", alignItems:"center", gap:5 }}>
+                <StatusDot level={over ? "yellow" : "green"} />
+                <span style={{ color:COLORS.text }}>{j.type}</span>
+              </div>
+              <div style={{ display:"flex", gap:10, color:COLORS.muted }}>
+                {j.hrs && <span style={{ color: over ? COLORS.yellow : COLORS.text }}>{j.hrs}h</span>}
+                {j.revenue && <span style={{ color:COLORS.accent }}>${Number(j.revenue).toLocaleString()}</span>}
+              </div>
+            </div>
+          );
+        })}
+        {jobs.length === 0 && <div style={{ color:COLORS.dimmed, textAlign:"center", padding:"10px 0", fontSize:12 }}>Sin jobs registrados</div>}
+      </div>
+
+      {alerts.length > 0 && (
+        <div style={{ marginTop:10 }}>
+          {alerts.map((a, i) => (
+            <Alert key={i} text={`${a.type}: ${a.hrs}h (bench: ≤${a.bench}h)`} level={a.level} />
+          ))}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+// ─── WEEKLY SUMMARY ───────────────────────────────────────────────────────────
+function WeeklySummary({ weekDates, allData }) {
+  const days = weekDates.map(d => ({ date: d, data: allData[d] || emptyDay() }));
+
+  const totals = days.reduce((acc, { data: d }) => {
+    const renanJobs = d.renan?.jobs || [];
+    const omarJobs = d.omar?.jobs || [];
+    acc.revenue += Number(d.raul?.invoiced) || 0;
+    acc.renanBillable += renanJobs.filter(j => j.type !== "Overhead").reduce((s, j) => s + (Number(j.hrs) || 0), 0);
+    acc.omarBillable += omarJobs.filter(j => j.type !== "Overhead").reduce((s, j) => s + (Number(j.hrs) || 0), 0);
+    acc.renanOverhead += Number(d.renan?.overheadHrs) || 0;
+    acc.omarOverhead += Number(d.omar?.overheadHrs) || 0;
+    acc.tuneUps += Number(d.dispatcher?.tuneUpsBooked) || 0;
+    acc.quotesSent += Number(d.raul?.quotesSent) || 0;
+    acc.quotesClosed += Number(d.raul?.quotesClosed) || 0;
+    acc.jobsScheduled += Number(d.dispatcher?.scheduled) || 0;
+    acc.jobsCompleted += Number(d.dispatcher?.completed) || 0;
+    acc.leads += Number(d.dispatcher?.newLeads) || 0;
+    acc.cancelled += Number(d.dispatcher?.cancelled) || 0;
+    return acc;
+  }, { revenue:0, renanBillable:0, omarBillable:0, renanOverhead:0, omarOverhead:0,
+       tuneUps:0, quotesSent:0, quotesClosed:0, jobsScheduled:0, jobsCompleted:0, leads:0, cancelled:0 });
+
+  const totalOverhead = totals.renanOverhead + totals.omarOverhead;
+  const dispRate = totals.jobsScheduled > 0 ? pct(totals.jobsCompleted, totals.jobsScheduled) : 0;
+  const closeRate = totals.quotesSent > 0 ? pct(totals.quotesClosed, totals.quotesSent) : null;
+
+  const metricRows = [
+    { label:"Revenue semanal", val: fmtMoney(totals.revenue), target: fmtMoney(TARGETS.weeklyRevenue),
+      pctVal: pct(totals.revenue, TARGETS.weeklyRevenue),
+      status: totals.revenue >= TARGETS.weeklyRevenue ? "green" : totals.revenue >= TARGETS.weeklyRevenue*0.6 ? "yellow" : "red" },
+    { label:"Tune Ups semana", val:`${totals.tuneUps}`, target:`${TARGETS.tuneUpsWeekly}`,
+      pctVal: pct(totals.tuneUps, TARGETS.tuneUpsWeekly),
+      status: totals.tuneUps >= TARGETS.tuneUpsWeekly ? "green" : totals.tuneUps >= TARGETS.tuneUpsWeekly*0.6 ? "yellow" : "red" },
+    { label:"Overhead total (Renan+Omar)", val:`${totalOverhead.toFixed(1)}h`, target:`${TARGETS.maxOverheadWeekTotal}h`,
+      pctVal: pct(totalOverhead, TARGETS.maxOverheadWeekTotal),
+      status: totalOverhead <= 4 ? "green" : totalOverhead <= 8 ? "yellow" : "red", invert: true },
+    { label:"Tasa despacho", val:`${dispRate}%`, target:"85%",
+      pctVal: dispRate,
+      status: dispRate >= 85 ? "green" : dispRate >= 60 ? "yellow" : "red" },
+    { label:"Hrs fact. Renan", val:`${totals.renanBillable.toFixed(1)}h`, target:"~30h",
+      pctVal: pct(totals.renanBillable, 30),
+      status: totals.renanBillable >= 25 ? "green" : totals.renanBillable >= 18 ? "yellow" : "red" },
+    { label:"Hrs fact. Omar", val:`${totals.omarBillable.toFixed(1)}h`, target:"~25h",
+      pctVal: pct(totals.omarBillable, 25),
+      status: totals.omarBillable >= 20 ? "green" : totals.omarBillable >= 14 ? "yellow" : "red" },
+  ];
+
+  return (
+    <div>
+      {/* KPI bars */}
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:14 }}>
+        {metricRows.map(m => (
+          <Card key={m.label}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:8 }}>
+              <div>
+                <div style={{ fontSize:11, color:COLORS.muted, textTransform:"uppercase", letterSpacing:0.8, marginBottom:3 }}>{m.label}</div>
+                <div style={{ fontFamily:"'Bebas Neue',sans-serif", fontSize:30,
+                  color: m.status === "green" ? COLORS.green : m.status === "yellow" ? COLORS.yellow : COLORS.red, lineHeight:1 }}>{m.val}</div>
+              </div>
+              <div style={{ textAlign:"right" }}>
+                <div style={{ fontSize:10, color:COLORS.dimmed }}>Meta: {m.target}</div>
+                <div style={{ fontFamily:"'Bebas Neue',sans-serif", fontSize:22,
+                  color: m.status === "green" ? COLORS.green : m.status === "yellow" ? COLORS.yellow : COLORS.red }}>
+                  {m.invert ? (m.pctVal > 100 ? "⚠ EXCEDIDO" : `${m.pctVal}%`) : `${m.pctVal}%`}
+                </div>
+              </div>
+            </div>
+            <ProgressBar value={m.invert ? Math.min(m.pctVal, 100) : m.pctVal} max={100}
+              color={m.status === "green" ? COLORS.green : m.status === "yellow" ? COLORS.yellow : COLORS.red} />
+          </Card>
+        ))}
+      </div>
+
+      {/* Per-day table */}
+      <Card>
+        <SectionTitle icon="📅" title="DETALLE POR DÍA" color={COLORS.accent} />
+        <div style={{ overflowX:"auto" }}>
+          <table style={{ width:"100%", borderCollapse:"collapse", fontSize:12 }}>
+            <thead>
+              <tr style={{ background: COLORS.bg }}>
+                {["Día","Revenue","Fact.Renan","OH Renan","Fact.Omar","OH Omar","T-Ups","Jobs","Cotiz.","Cierres"].map(h => (
+                  <th key={h} style={{ padding:"8px 10px", textAlign:"left", color:COLORS.muted,
+                    fontSize:10, textTransform:"uppercase", letterSpacing:0.8, borderBottom:`1px solid ${COLORS.border}` }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {days.map(({ date, data: d }, i) => {
+                const rJobs = d.renan?.jobs || [];
+                const oJobs = d.omar?.jobs || [];
+                const rBill = rJobs.filter(j => j.type !== "Overhead").reduce((s, j) => s + (Number(j.hrs) || 0), 0);
+                const oBill = oJobs.filter(j => j.type !== "Overhead").reduce((s, j) => s + (Number(j.hrs) || 0), 0);
+                const rOH = Number(d.renan?.overheadHrs) || 0;
+                const oOH = Number(d.omar?.overheadHrs) || 0;
+                const rev = Number(d.raul?.invoiced) || 0;
+                const tUps = Number(d.dispatcher?.tuneUpsBooked) || 0;
+                const compl = Number(d.dispatcher?.completed) || 0;
+                const qSent = Number(d.raul?.quotesSent) || 0;
+                const qClosed = Number(d.raul?.quotesClosed) || 0;
+                const hasData = rev > 0 || rBill > 0 || oBill > 0;
+                return (
+                  <tr key={date} style={{ background: i % 2 === 0 ? COLORS.card : COLORS.card2,
+                    opacity: hasData ? 1 : 0.5 }}>
+                    <td style={{ padding:"8px 10px", color:COLORS.text, borderBottom:`1px solid ${COLORS.border}` }}>
+                      <div style={{ fontWeight:500 }}>{fmtDate(date)}</div>
+                    </td>
+                    <td style={{ padding:"8px 10px", borderBottom:`1px solid ${COLORS.border}`,
+                      color: rev >= TARGETS.dailyRevenue ? COLORS.green : rev > 0 ? COLORS.yellow : COLORS.dimmed,
+                      fontFamily:"'Bebas Neue',sans-serif", fontSize:15 }}>
+                      {rev > 0 ? fmtMoney(rev) : "—"}
+                    </td>
+                    <td style={{ padding:"8px 10px", borderBottom:`1px solid ${COLORS.border}`, color:COLORS.text }}>{rBill > 0 ? `${rBill.toFixed(1)}h` : "—"}</td>
+                    <td style={{ padding:"8px 10px", borderBottom:`1px solid ${COLORS.border}`,
+                      color: rOH > 1.5 ? COLORS.red : rOH > 0 ? COLORS.yellow : COLORS.green }}>{rOH > 0 ? `${rOH}h` : "✓"}</td>
+                    <td style={{ padding:"8px 10px", borderBottom:`1px solid ${COLORS.border}`, color:COLORS.text }}>{oBill > 0 ? `${oBill.toFixed(1)}h` : "—"}</td>
+                    <td style={{ padding:"8px 10px", borderBottom:`1px solid ${COLORS.border}`,
+                      color: oOH > 1.5 ? COLORS.red : oOH > 0 ? COLORS.yellow : COLORS.green }}>{oOH > 0 ? `${oOH}h` : "✓"}</td>
+                    <td style={{ padding:"8px 10px", borderBottom:`1px solid ${COLORS.border}`,
+                      color: tUps >= 2 ? COLORS.green : tUps === 1 ? COLORS.yellow : COLORS.dimmed }}>{tUps > 0 ? tUps : "—"}</td>
+                    <td style={{ padding:"8px 10px", borderBottom:`1px solid ${COLORS.border}`, color:COLORS.text }}>{compl > 0 ? compl : "—"}</td>
+                    <td style={{ padding:"8px 10px", borderBottom:`1px solid ${COLORS.border}`, color:COLORS.text }}>{qSent > 0 ? qSent : "—"}</td>
+                    <td style={{ padding:"8px 10px", borderBottom:`1px solid ${COLORS.border}`,
+                      color: qClosed > 0 ? COLORS.green : COLORS.dimmed }}>{qClosed > 0 ? qClosed : "—"}</td>
+                  </tr>
+                );
+              })}
+              {/* Totals row */}
+              <tr style={{ background:COLORS.bg }}>
+                <td style={{ padding:"8px 10px", color:COLORS.accent, fontWeight:700, fontSize:12 }}>TOTAL</td>
+                <td style={{ padding:"8px 10px", fontFamily:"'Bebas Neue',sans-serif", fontSize:16,
+                  color: totals.revenue >= TARGETS.weeklyRevenue ? COLORS.green : COLORS.yellow }}>{fmtMoney(totals.revenue)}</td>
+                <td style={{ padding:"8px 10px", color:COLORS.text }}>{totals.renanBillable.toFixed(1)}h</td>
+                <td style={{ padding:"8px 10px", color: totals.renanOverhead > TARGETS.maxOverheadWeekTotal/2 ? COLORS.red : COLORS.green }}>{totals.renanOverhead.toFixed(1)}h</td>
+                <td style={{ padding:"8px 10px", color:COLORS.text }}>{totals.omarBillable.toFixed(1)}h</td>
+                <td style={{ padding:"8px 10px", color: totals.omarOverhead > TARGETS.maxOverheadWeekTotal/2 ? COLORS.red : COLORS.green }}>{totals.omarOverhead.toFixed(1)}h</td>
+                <td style={{ padding:"8px 10px", color: totals.tuneUps >= TARGETS.tuneUpsWeekly ? COLORS.green : COLORS.yellow }}>{totals.tuneUps}</td>
+                <td style={{ padding:"8px 10px", color:COLORS.text }}>{totals.jobsCompleted}</td>
+                <td style={{ padding:"8px 10px", color:COLORS.text }}>{totals.quotesSent}</td>
+                <td style={{ padding:"8px 10px", color:COLORS.green }}>{totals.quotesClosed}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        {/* Summary alerts */}
+        <div style={{ marginTop:14, display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
+          {totalOverhead > TARGETS.maxOverheadWeekTotal && <Alert text={`Overhead semanal: ${totalOverhead.toFixed(1)}h — excede límite de ${TARGETS.maxOverheadWeekTotal}h`} level="red" />}
+          {totals.tuneUps >= TARGETS.tuneUpsWeekly && <Alert text={`Meta de Tune Ups alcanzada: ${totals.tuneUps}/${TARGETS.tuneUpsWeekly} ✓`} level="green" />}
+          {totals.revenue >= TARGETS.weeklyRevenue && <Alert text={`Meta de revenue semanal alcanzada: ${fmtMoney(totals.revenue)}`} level="green" />}
+          {closeRate !== null && closeRate < 30 && <Alert text={`Tasa de cierre baja: ${closeRate}% (meta: 30%+)`} level="yellow" />}
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+// ─── BENCHMARKS PANEL ─────────────────────────────────────────────────────────
+function BenchmarksPanel() {
+  return (
+    <Card>
+      <SectionTitle icon="📐" title="BENCHMARKS DE REFERENCIA" color={COLORS.accent} />
+      <table style={{ width:"100%", borderCollapse:"collapse", fontSize:12 }}>
+        <thead>
+          <tr style={{ background:COLORS.bg }}>
+            {["Tipo de Job","Hrs Benchmark","GP Objetivo","Alerta si..."].map(h => (
+              <th key={h} style={{ padding:"8px 10px", textAlign:"left", color:COLORS.muted,
+                fontSize:10, textTransform:"uppercase", letterSpacing:0.8, borderBottom:`1px solid ${COLORS.border}` }}>{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {Object.entries(BENCHMARKS).map(([type, b], i) => (
+            <tr key={type} style={{ background: i % 2 === 0 ? COLORS.card : COLORS.card2 }}>
+              <td style={{ padding:"8px 10px", color:COLORS.text, fontWeight:500 }}>{type}</td>
+              <td style={{ padding:"8px 10px", color:COLORS.blue }}>{b.min === 0 ? `≤${b.max}h` : `${b.min}–${b.max}h`}</td>
+              <td style={{ padding:"8px 10px", color:COLORS.green }}>{b.gpBench}</td>
+              <td style={{ padding:"8px 10px", color:COLORS.yellow, fontSize:11 }}>
+                {b.max > 0 ? `Hrs > ${b.max}h = revisar` : "Documentar siempre"}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <div style={{ marginTop:14, padding:"10px 14px", background:COLORS.bg, borderRadius:8,
+        borderLeft:`3px solid ${COLORS.accent}`, fontSize:11, color:COLORS.muted, lineHeight:1.8 }}>
+        <strong style={{ color:COLORS.accent }}>Regla de overhead:</strong> Máximo 1.5h/día por técnico · Máximo 8h/semana entre ambos (Renan + Omar)<br/>
+        <strong style={{ color:COLORS.accent }}>Meta Tune Ups mayo:</strong> 8–12/semana · Revenue por hr facturable: Renan $259+/hr · Omar $124+/hr<br/>
+        <strong style={{ color:COLORS.accent }}>Drive ratio saludable:</strong> Renan ≤15% · Omar ≤13% de horas totales
+      </div>
+    </Card>
+  );
+}
+
+// ─── STYLES ───────────────────────────────────────────────────────────────────
+const styles = {
+  label: { display:"flex", flexDirection:"column", gap:4, fontSize:11,
+    color:"#8b949e", textTransform:"uppercase", letterSpacing:0.8 },
+  input: { background:"#0d1117", border:`1px solid #30363d`, borderRadius:6, padding:"8px 10px",
+    color:"#e6edf3", fontSize:14, outline:"none", fontFamily:"inherit", width:"100%", boxSizing:"border-box" },
+  select: { background:"#0d1117", border:`1px solid #30363d`, borderRadius:6, padding:"8px 10px",
+    color:"#e6edf3", fontSize:13, outline:"none", fontFamily:"inherit", width:"100%", cursor:"pointer" },
+  textarea: { background:"#0d1117", border:`1px solid #30363d`, borderRadius:6, padding:"8px 10px",
+    color:"#e6edf3", fontSize:13, outline:"none", fontFamily:"inherit", width:"100%",
+    boxSizing:"border-box", resize:"vertical" },
+  addBtn: { background:"#1c2330", border:`1px solid #30363d`, borderRadius:6, padding:"5px 12px",
+    color:"#f0a500", fontSize:12, cursor:"pointer", fontFamily:"inherit" },
+  iconBtn: { background:"transparent", border:"none", cursor:"pointer", fontSize:14, padding:"2px 6px",
+    borderRadius:4, lineHeight:1 },
+};
+
+// ─── MAIN APP ─────────────────────────────────────────────────────────────────
+function App() {
+  useEffect(() => {
+    const link = document.createElement("link");
+    link.rel = "stylesheet";
+    link.href = "https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600&display=swap";
+    document.head.appendChild(link);
+    return () => document.head.removeChild(link);
+  }, []);
+
+  const todayStr = new Date().toISOString().split("T")[0];
+  const [activeTab, setActiveTab] = useState("board");
+  // Default al último día con datos precargados (Vie 1 May 2026 — sem 18)
+  const [activeDay, setActiveDay] = useState("2026-05-01");
+  const [allData, setAllData] = useState({});
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function load() {
+      let stored = {};
+      try {
+        const r = localStorage.getItem("jem-dashboard-v1");
+        if (r) stored = JSON.parse(r);
+      } catch {}
+      // Merge: PRELOADED_DATA primero, luego stored — los edits del usuario ganan
+      const merged = { ...PRELOADED_DATA, ...stored };
+      setAllData(merged);
+      setLoading(false);
+    }
+    load();
+  }, []);
+
+  const saveAll = async (newData) => {
+    setAllData(newData);
+    try { localStorage.setItem("jem-dashboard-v1", JSON.stringify(newData)); } catch {}
+  };
+
+  const getDayData = (d) => allData[d] || emptyDay();
+  const dayData = getDayData(activeDay);
+  const weekDates = getWeekDates(activeDay);
+
+  const updateSection = (section, field, value) => {
+    const newAll = { ...allData };
+    if (!newAll[activeDay]) newAll[activeDay] = emptyDay();
+    newAll[activeDay][section][field] = value;
+    saveAll(newAll);
+  };
+
+  const weeklyRevenue = weekDates.reduce((s, d) => s + (Number(getDayData(d).raul?.invoiced) || 0), 0);
+  const weeklyOverhead = weekDates.reduce((s, d) => {
+    const dd = getDayData(d);
+    return s + (Number(dd.renan?.overheadHrs) || 0) + (Number(dd.omar?.overheadHrs) || 0);
+  }, 0);
+  const weeklyTuneUps = weekDates.reduce((s, d) => s + (Number(getDayData(d).dispatcher?.tuneUpsBooked) || 0), 0);
+
+  const TABS = [
+    { id:"board",   label:"📊 Dashboard",    sub:"Vista del día" },
+    { id:"entry",   label:"✏️ Capturar",      sub:"Ingresar datos" },
+    { id:"weekly",  label:"📅 Semanal",       sub:"Resumen semana" },
+    { id:"benchmarks", label:"📐 Benchmarks", sub:"Referencia" },
+  ];
+
+  if (loading) return (
+    <div style={{ background:COLORS.bg, minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center" }}>
+      <div style={{ color:COLORS.muted, fontFamily:"'DM Sans',sans-serif", fontSize:14 }}>Cargando...</div>
+    </div>
+  );
+
+  return (
+    <div style={{ background:COLORS.bg, minHeight:"100vh", fontFamily:"'DM Sans',sans-serif",
+      color:COLORS.text, padding:"0 0 40px 0" }}>
+
+      {/* Header */}
+      <div style={{ background:COLORS.card, borderBottom:`1px solid ${COLORS.border}`,
+        padding:"14px 24px", display:"flex", justifyContent:"space-between", alignItems:"center",
+        position:"sticky", top:0, zIndex:100 }}>
+        <div style={{ display:"flex", alignItems:"center", gap:14 }}>
+          <div>
+            <div style={{ fontFamily:"'Bebas Neue',sans-serif", fontSize:22, letterSpacing:2, color:COLORS.accent, lineHeight:1 }}>
+              JEM RESIDENTIAL
+            </div>
+            <div style={{ fontSize:10, color:COLORS.muted, letterSpacing:1, textTransform:"uppercase" }}>Operations Dashboard</div>
+          </div>
+        </div>
+
+        {/* Day navigation */}
+        <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+          <button onClick={() => {
+            const [y, m, d] = activeDay.split("-").map(Number);
+            const prev = new Date(y, m - 1, d - 1);
+            setActiveDay(prev.toISOString().split("T")[0]);
+          }} style={{ ...styles.iconBtn, color:COLORS.muted, fontSize:18, border:`1px solid ${COLORS.border}`,
+            background:COLORS.card2, padding:"4px 10px" }}>‹</button>
+
+          <div style={{ textAlign:"center", minWidth:120 }}>
+            <div style={{ fontFamily:"'Bebas Neue',sans-serif", fontSize:18, color:COLORS.text, letterSpacing:1 }}>
+              {fmtDate(activeDay)}
+            </div>
+            {activeDay === todayStr && (
+              <div style={{ fontSize:9, color:COLORS.green, textTransform:"uppercase", letterSpacing:1 }}>● HOY</div>
+            )}
+          </div>
+
+          <button onClick={() => {
+            const [y, m, d] = activeDay.split("-").map(Number);
+            const next = new Date(y, m - 1, d + 1);
+            setActiveDay(next.toISOString().split("T")[0]);
+          }} style={{ ...styles.iconBtn, color:COLORS.muted, fontSize:18, border:`1px solid ${COLORS.border}`,
+            background:COLORS.card2, padding:"4px 10px" }}>›</button>
+
+          {activeDay !== todayStr && (
+            <button onClick={() => setActiveDay(todayStr)}
+              style={{ ...styles.addBtn, fontSize:11 }}>Hoy</button>
+          )}
+        </div>
+
+        {/* Weekly mini-stats */}
+        <div style={{ display:"flex", gap:20 }}>
+          {[
+            { label:"Rev. semana", val: fmtMoney(weeklyRevenue), status: weeklyRevenue >= TARGETS.weeklyRevenue ? "green" : weeklyRevenue > 0 ? "yellow" : null },
+            { label:"Overhead", val: `${weeklyOverhead.toFixed(1)}h`, status: weeklyOverhead <= 4 ? "green" : weeklyOverhead <= 8 ? "yellow" : "red" },
+            { label:"Tune Ups", val: `${weeklyTuneUps}`, status: weeklyTuneUps >= TARGETS.tuneUpsWeekly ? "green" : weeklyTuneUps > 0 ? "yellow" : null },
+          ].map(({ label, val, status }) => (
+            <div key={label} style={{ textAlign:"center" }}>
+              <div style={{ fontFamily:"'Bebas Neue',sans-serif", fontSize:18, lineHeight:1,
+                color: status === "green" ? COLORS.green : status === "yellow" ? COLORS.yellow : status === "red" ? COLORS.red : COLORS.dimmed }}>
+                {val}
+              </div>
+              <div style={{ fontSize:9, color:COLORS.dimmed, textTransform:"uppercase", letterSpacing:0.8 }}>{label}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div style={{ background:COLORS.card2, borderBottom:`1px solid ${COLORS.border}`,
+        display:"flex", padding:"0 24px" }}>
+        {TABS.map(t => (
+          <button key={t.id} onClick={() => setActiveTab(t.id)} style={{
+            background:"transparent", border:"none", padding:"12px 20px", cursor:"pointer",
+            fontFamily:"'DM Sans',sans-serif", fontSize:13, fontWeight:500,
+            color: activeTab === t.id ? COLORS.accent : COLORS.muted,
+            borderBottom: activeTab === t.id ? `2px solid ${COLORS.accent}` : "2px solid transparent",
+            transition:"all 0.2s"
+          }}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Week day pills */}
+      <div style={{ background:COLORS.card2, padding:"8px 24px", display:"flex", gap:6,
+        borderBottom:`1px solid ${COLORS.border}` }}>
+        {weekDates.map(d => {
+          const dd = getDayData(d);
+          const hasData = Number(dd.raul?.invoiced) > 0 || (dd.renan?.jobs || []).length > 0;
+          const isActive = d === activeDay;
+          return (
+            <button key={d} onClick={() => setActiveDay(d)} style={{
+              background: isActive ? COLORS.accent : hasData ? COLORS.card : COLORS.bg,
+              border: `1px solid ${isActive ? COLORS.accent : COLORS.border}`,
+              borderRadius:6, padding:"5px 12px", cursor:"pointer", fontFamily:"'DM Sans',sans-serif",
+              color: isActive ? COLORS.bg : hasData ? COLORS.text : COLORS.dimmed, fontSize:12, fontWeight: isActive ? 700 : 400
+            }}>
+              {fmtDate(d)}
+              {hasData && !isActive && <span style={{ marginLeft:4, color:COLORS.green, fontSize:10 }}>●</span>}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Content */}
+      <div style={{ padding:"20px 24px" }}>
+        {activeTab === "board" && (
+          <DailyBoard dayData={dayData} weeklyRevenue={weeklyRevenue}
+            weeklyOverhead={weeklyOverhead} weeklyTuneUps={weeklyTuneUps}
+            weekDates={weekDates} allData={allData} />
+        )}
+
+        {activeTab === "entry" && (
+          <div>
+            <div style={{ marginBottom:16, padding:"10px 14px", background:`${COLORS.accent}15`,
+              border:`1px solid ${COLORS.accent}40`, borderRadius:8, fontSize:12, color:COLORS.accent }}>
+              ✏️ Capturando datos para: <strong>{fmtDate(activeDay)}</strong> — Los cambios se guardan automáticamente.
+            </div>
+            <TechEntry name="Renan Leiva" data={dayData.renan || emptyDay().renan}
+              onChange={(f, v) => updateSection("renan", f, v)} />
+            <TechEntry name="Omar Maradiaga" data={dayData.omar || emptyDay().omar}
+              onChange={(f, v) => updateSection("omar", f, v)} />
+            <DispatcherEntry data={dayData.dispatcher || emptyDay().dispatcher}
+              onChange={(f, v) => updateSection("dispatcher", f, v)} />
+            <RaulEntry data={dayData.raul || emptyDay().raul}
+              onChange={(f, v) => updateSection("raul", f, v)} />
+          </div>
+        )}
+
+        {activeTab === "weekly" && (
+          <WeeklySummary weekDates={weekDates} allData={allData} />
+        )}
+
+        {activeTab === "benchmarks" && <BenchmarksPanel />}
+      </div>
+    </div>
+  );
+}
+
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+
+  </script>
+</body>
+</html>
